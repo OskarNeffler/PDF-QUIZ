@@ -90,4 +90,4 @@ Projektet använder en finetunad T5-modell tränad på SQuAD-datasetet för att 
 
 ## License
 
-MIT 
+MIT
