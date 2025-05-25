@@ -3,6 +3,13 @@ venv/
 env/
 ENV/
 
+# Environment variables and API keys
+.env
+.env.*
+*.key
+*api_key*
+*API_KEY*
+
 # Python
 __pycache__/
 *.py[cod]
@@ -30,10 +37,18 @@ wheels/
 question_generation_model/best_model
 question_generation_model/checkpoint.pt
 question_generation_model_cpu/
+models/*/model.safetensors
+models/*/decoder_*.onnx
+models/*/encoder_model.onnx
 
 # PDF files (except sample)
 *.pdf
 !sample.pdf
+
+# Extracted texts and cache
+extracted_texts/
+pdf_cache.json
+quiz_*.txt
 
 # OS specific
 .DS_Store

@@ -1,0 +1,12 @@
+# 🔑 Du behöver lägga till detta i din .env fil:
+
+OPENAI_API_KEY="din-nya-api-nyckel-här"
+MAX_PDFS_PER_TEST=2
+MAX_QUESTIONS_PER_PDF=8
+DEFAULT_MODEL="gpt-4o"
+BACKUP_MODEL="gpt-4o-mini"
+MAX_COST_PER_SESSION=1.00
+WARN_COST_THRESHOLD=0.50
+DEBUG_MODE=true
+
+# Lägg bara till dessa rader i din befintliga .env fil! 
