@@ -312,8 +312,8 @@ MAIN_TEMPLATE = """
                 </button>
                 
                 <button class="content-button qa" onclick="selectContentType('qa')">
-                    💬 Ask T5 Model
-                    <div class="content-button-desc">Ask questions directly to your T5 model</div>
+                    🔍 Generate Questions from Text
+                    <div class="content-button-desc">Let T5 generate questions from your input text</div>
                 </button>
             </div>
             
@@ -379,20 +379,21 @@ MAIN_TEMPLATE = """
         }
         
         function showChatbot() {
-            // Hide the content selection area and show chatbot interface
+            // Hide the content selection area and show question generator interface
             const contentSection = document.querySelector('.section:nth-child(3)');
             contentSection.innerHTML = `
-                <h3>💬 Chat with T5 Model</h3>
-                <p>Ask your T5 model any question directly!</p>
+                <h3>🔍 Question Generator</h3>
+                <p>Enter any text and T5 will generate relevant questions about it!</p>
                 
                 <div style="margin: 20px 0;">
-                    <input type="text" id="chatbot-question" placeholder="Type your question here..." 
-                           style="width: 70%; padding: 12px; font-size: 16px;" onkeypress="handleChatKeyPress(event)">
-                    <button onclick="askT5Question()" style="padding: 12px 20px; font-size: 16px; margin-left: 10px;">Ask 💬</button>
+                    <label for="input-text" style="display: block; font-weight: bold; margin-bottom: 10px;">Enter your text:</label>
+                    <textarea id="input-text" placeholder="Enter any text here (e.g., 'The Transformer model uses self-attention mechanisms...')" 
+                           style="width: 100%; height: 120px; padding: 12px; font-size: 14px; border: 1px solid #ddd; border-radius: 5px; resize: vertical;"></textarea>
+                    <button onclick="generateQuestions()" style="padding: 12px 20px; font-size: 16px; margin-top: 10px; background: #28a745;">Generate Questions 🔍</button>
                 </div>
                 
-                <div id="chat-history" style="background: #f8f9fa; padding: 20px; border-radius: 10px; min-height: 200px; max-height: 400px; overflow-y: auto; border: 1px solid #ddd;">
-                    <p style="color: #666; text-align: center; margin: 50px 0;">Ask me anything! I'll do my best to answer using my T5 knowledge.</p>
+                <div id="generated-questions" style="background: #f8f9fa; padding: 20px; border-radius: 10px; min-height: 200px; max-height: 400px; overflow-y: auto; border: 1px solid #ddd;">
+                    <p style="color: #666; text-align: center; margin: 50px 0;">Enter some text above and click 'Generate Questions' to see what T5 can create!</p>
                 </div>
                 
                 <div style="margin-top: 15px;">
@@ -400,104 +401,79 @@ MAIN_TEMPLATE = """
                 </div>
             `;
             
-            // Focus on the input field
+            // Focus on the textarea
             setTimeout(() => {
-                document.getElementById('chatbot-question').focus();
+                document.getElementById('input-text').focus();
             }, 100);
         }
         
-        function handleChatKeyPress(event) {
-            if (event.key === 'Enter') {
-                askT5Question();
-            }
-        }
-        
-        function askT5Question() {
-            const questionInput = document.getElementById('chatbot-question');
-            const question = questionInput.value.trim();
+        function generateQuestions() {
+            const inputText = document.getElementById('input-text').value.trim();
             
-            if (!question) {
-                alert('Please enter a question!');
+            if (!inputText) {
+                alert('Please enter some text first!');
                 return;
             }
             
-            // Clear input and show loading
-            questionInput.value = '';
-            const chatHistory = document.getElementById('chat-history');
+            if (inputText.length < 20) {
+                alert('Please enter more text (at least 20 characters) for better question generation.');
+                return;
+            }
             
-            // Add user question to chat
-            chatHistory.innerHTML += `
-                <div style="margin: 10px 0; text-align: right;">
-                    <div style="background: #007bff; color: white; padding: 10px 15px; border-radius: 15px 15px 5px 15px; display: inline-block; max-width: 70%;">
-                        <strong>Du:</strong> ${question}
-                    </div>
+            // Clear previous results and show loading
+            const questionsContainer = document.getElementById('generated-questions');
+            questionsContainer.innerHTML = `
+                <div style="text-align: center; padding: 40px;">
+                    <div style="color: #666; font-size: 16px;">🔍 Generating questions from your text...</div>
+                    <div style="color: #999; font-size: 14px; margin-top: 10px;">This may take a moment...</div>
                 </div>
             `;
             
-            // Add loading indicator
-            chatHistory.innerHTML += `
-                <div id="loading-message" style="margin: 10px 0;">
-                    <div style="background: #e9ecef; color: #666; padding: 10px 15px; border-radius: 15px 15px 15px 5px; display: inline-block; max-width: 70%;">
-                        <strong>T5:</strong> Thinking... 🤔
-                    </div>
-                </div>
-            `;
-            
-            // Scroll to bottom
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-            
-            // Send question to backend
-            fetch('/ask_t5', {
+            // Send text to backend for question generation
+            fetch('/generate_questions_from_text', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: `user_question=${encodeURIComponent(question)}`
+                body: `input_text=${encodeURIComponent(inputText)}`
             })
             .then(response => response.json())
             .then(data => {
-                // Remove loading message
-                document.getElementById('loading-message').remove();
-                
                 if (data.success) {
-                    // Add T5 response to chat
-                    chatHistory.innerHTML += `
-                        <div style="margin: 10px 0;">
-                            <div style="background: #28a745; color: white; padding: 10px 15px; border-radius: 15px 15px 15px 5px; display: inline-block; max-width: 70%;">
-                                <strong>T5:</strong> ${data.answer}
-                            </div>
+                    // Display generated questions
+                    let questionsHtml = `
+                        <h4 style="color: #28a745; margin-bottom: 15px;">✅ Generated Questions:</h4>
+                        <div style="color: #666; font-size: 12px; margin-bottom: 15px;">
+                            📊 Generated ${data.questions.length} questions from ${data.input_length} characters
                         </div>
                     `;
-                } else {
-                    // Add error message to chat
-                    chatHistory.innerHTML += `
-                        <div style="margin: 10px 0;">
-                            <div style="background: #dc3545; color: white; padding: 10px 15px; border-radius: 15px 15px 15px 5px; display: inline-block; max-width: 70%;">
-                                <strong>Error:</strong> ${data.error}
+                    
+                    data.questions.forEach((question, index) => {
+                        questionsHtml += `
+                            <div style="background: white; margin: 10px 0; padding: 15px; border-radius: 8px; border-left: 4px solid #28a745;">
+                                <strong>Q${index + 1}:</strong> ${question}
                             </div>
+                        `;
+                    });
+                    
+                    questionsContainer.innerHTML = questionsHtml;
+                } else {
+                    // Show error message
+                    questionsContainer.innerHTML = `
+                        <div style="text-align: center; padding: 40px;">
+                            <div style="color: #dc3545; font-size: 16px;">❌ Error generating questions</div>
+                            <div style="color: #666; font-size: 14px; margin-top: 10px;">${data.error}</div>
                         </div>
                     `;
                 }
-                
-                // Scroll to bottom
-                chatHistory.scrollTop = chatHistory.scrollHeight;
             })
             .catch(error => {
-                // Remove loading message
-                const loadingMsg = document.getElementById('loading-message');
-                if (loadingMsg) loadingMsg.remove();
-                
-                // Add error message to chat
-                chatHistory.innerHTML += `
-                    <div style="margin: 10px 0;">
-                        <div style="background: #dc3545; color: white; padding: 10px 15px; border-radius: 15px 15px 15px 5px; display: inline-block; max-width: 70%;">
-                            <strong>Error:</strong> Failed to get response from T5 model.
-                        </div>
+                questionsContainer.innerHTML = `
+                    <div style="text-align: center; padding: 40px;">
+                        <div style="color: #dc3545; font-size: 16px;">❌ Connection error</div>
+                        <div style="color: #666; font-size: 14px; margin-top: 10px;">Failed to connect to the server.</div>
                     </div>
                 `;
-                
-                // Scroll to bottom
-                chatHistory.scrollTop = chatHistory.scrollHeight;
             });
         }
         
@@ -1739,10 +1715,10 @@ You can now use 'AI Questions + T5 Answers (Hybrid)' with this high-quality text
                                     extracted_texts=load_extracted_texts(),
                                     output=f"❌ Error processing PDF: {str(e)}")
 
-@app.route('/ask_t5', methods=['POST'])
-def ask_t5():
-    """Handle direct questions to T5 model (chatbot functionality)"""
-    user_question = request.form.get('user_question', '').strip()
+@app.route('/generate_questions_from_text', methods=['POST'])
+def generate_questions_from_text():
+    """Generate questions from user input text using T5 model"""
+    input_text = request.form.get('input_text', '').strip()
     
     if not quiz_generator or not quiz_generator.setup_success:
         return jsonify({
@@ -1750,26 +1726,87 @@ def ask_t5():
             'error': 'Model not loaded. Please load the model first.'
         })
     
-    if not user_question:
+    if not input_text:
         return jsonify({
             'success': False,
-            'error': 'Please enter a question.'
+            'error': 'Please enter some text.'
+        })
+        
+    if len(input_text) < 20:
+        return jsonify({
+            'success': False,
+            'error': 'Please enter more text (at least 20 characters) for better question generation.'
         })
     
     try:
-        # Use T5 to directly answer the user's question
-        answer = quiz_generator.ask_direct_question(user_question)
+        # Generate questions using both template-based and T5-based methods
+        template_questions = quiz_generator._generate_template_based_questions(input_text, 3)
+        
+        # Also try T5 question generation
+        t5_questions = []
+        try:
+            # Use T5 for direct question generation
+            import torch
+            chunks = quiz_generator._split_text(input_text, 400)
+            
+            for chunk in chunks[:3]:  # Process max 3 chunks
+                # Use prompts that work well with SQuAD-trained models
+                prompts = [
+                    f"question: {chunk}",
+                    f"what question about: {chunk}",
+                    f"generate question: {chunk}"
+                ]
+                
+                for prompt in prompts:
+                    inputs = quiz_generator.tokenizer(
+                        prompt,
+                        max_length=512,
+                        truncation=True,
+                        padding=True,
+                        return_tensors="pt"
+                    ).to(quiz_generator.device)
+                    
+                    with torch.no_grad():
+                        outputs = quiz_generator.model.generate(
+                            **inputs,
+                            max_length=64,
+                            num_beams=3,
+                            early_stopping=True,
+                            do_sample=True,
+                            temperature=0.8,
+                            no_repeat_ngram_size=2
+                        )
+                    
+                    question = quiz_generator.tokenizer.decode(outputs[0], skip_special_tokens=True)
+                    if question and len(question.strip()) > 10 and question.strip() not in t5_questions:
+                        if not question.strip().endswith('?'):
+                            question = question.strip() + '?'
+                        t5_questions.append(question.strip())
+                        
+                    if len(t5_questions) >= 3:
+                        break
+                if len(t5_questions) >= 3:
+                    break
+        except Exception as e:
+            print(f"⚠️ T5 question generation failed: {e}")
+        
+        # Combine questions from both methods
+        questions = template_questions + t5_questions
+        
+        if not questions:
+            questions = [f"What is the main topic discussed in: '{input_text[:100]}...'?"]
         
         return jsonify({
             'success': True,
-            'question': user_question,
-            'answer': answer
+            'questions': questions[:5],  # Return max 5 questions
+            'input_length': len(input_text)
         })
         
     except Exception as e:
+        print(f"❌ Error generating questions: {str(e)}")
         return jsonify({
             'success': False,
-            'error': f'Error generating answer: {str(e)}'
+            'error': f'Error generating questions: {str(e)}'
         })
 
 if __name__ == '__main__':
