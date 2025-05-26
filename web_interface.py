@@ -3,7 +3,7 @@
 🎯 Interactive Quiz Generator - Flask Web Interface
 Play quiz questions one by one with immediate feedback
 """
-from flask import Flask, render_template_string, request, jsonify, redirect, url_for, session
+from flask import Flask, render_template_string, request, jsonify, redirect, url_for, session, send_file
 import os
 import sys
 import subprocess
@@ -18,6 +18,65 @@ app.secret_key = 'quiz_generator_secret_key_2024'
 # Global variables
 quiz_generator = None
 model_loaded = False
+
+# Store the current PDF path for viewing
+current_pdf_path = None
+
+def find_matching_pdf(text_filename):
+    """
+    Find a matching PDF file for a given text filename
+    Searches in best_cheatsheets, cheatsheets, and uploads directories
+    """
+    # Remove .txt extension and common suffixes
+    base_name = text_filename.replace('.txt', '')
+    base_name = base_name.replace('_SMART', '').replace('_DIRECT', '')
+    
+    # Directories to search in priority order
+    search_dirs = ['best_cheatsheets', 'cheatsheets', 'uploads']
+    
+    for directory in search_dirs:
+        if not Path(directory).exists():
+            continue
+            
+        # Try exact match first
+        pdf_path = Path(directory) / f"{base_name}.pdf"
+        if pdf_path.exists():
+            print(f"📎 Found matching PDF: {pdf_path}")
+            return str(pdf_path.absolute())
+        
+        # Try case-insensitive match
+        try:
+            for file in Path(directory).iterdir():
+                if file.suffix.lower() == '.pdf':
+                    file_base = file.stem.lower()
+                    if file_base == base_name.lower():
+                        print(f"📎 Found matching PDF (case-insensitive): {file}")
+                        return str(file.absolute())
+        except Exception as e:
+            print(f"⚠️ Error searching in {directory}: {e}")
+            continue
+    
+    print(f"📎 No matching PDF found for: {text_filename}")
+    return None
+
+def set_current_pdf_from_text(selected_texts):
+    """
+    Set the current PDF path based on selected texts
+    """
+    global current_pdf_path
+    current_pdf_path = None
+    
+    if not selected_texts:
+        return
+    
+    # Use the first selected text to find a matching PDF
+    first_text = selected_texts[0] if isinstance(selected_texts, list) else selected_texts
+    current_pdf_path = find_matching_pdf(first_text)
+    
+    if current_pdf_path:
+        print(f"🎯 Set current PDF for viewing: {current_pdf_path}")
+    else:
+        print(f"📎 No PDF available for viewing with text: {first_text}")
 
 # HTML Template for main page
 MAIN_TEMPLATE = """
@@ -181,16 +240,16 @@ MAIN_TEMPLATE = """
             box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
         .content-button.summary {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
         }
-        .content-button.hybrid {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        }
-        .content-button.quiz {
-            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        .content-button.multiple_choice {
+            background: linear-gradient(135deg, #dc3545 0%, #e83e8c 100%);
         }
         .content-button.qa {
             background: linear-gradient(135deg, #ffd700 0%, #ffa500 100%);
+        }
+        .content-button.hybrid {
+            background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
         }
         .content-button-desc {
             font-size: 12px;
@@ -219,6 +278,25 @@ MAIN_TEMPLATE = """
         }
         .summary-length-btn.selected {
             background: #007bff;
+        }
+        
+        .length-button {
+            background: #f8f9fa;
+            border: 2px solid #ddd;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: bold;
+        }
+        .length-button:hover {
+            background: #e9ecef;
+            border-color: #007bff;
+        }
+        .length-button.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
         }
     </style>
 </head>
@@ -278,7 +356,7 @@ MAIN_TEMPLATE = """
         
         <!-- Content Generation Section -->
         <div class="section">
-            <h3>🎲 Generate Content</h3>
+            <h3>�� Generate Content</h3>
             
             {% if extracted_texts %}
             <div class="quiz-info">
@@ -300,36 +378,73 @@ MAIN_TEMPLATE = """
                 </select>
             </div>
             
-            <div class="content-buttons">
-                <button class="content-button summary" onclick="selectContentType('summary')">
-                    📝 Text Summarization
-                    <div class="content-button-desc">Single comprehensive summary using T5 model</div>
-                </button>
-                
-                <button class="content-button quiz" onclick="selectContentType('multiple_choice')">
-                    🔤 Multiple Choice Quiz
-                    <div class="content-button-desc">Interactive quiz with multiple choice questions</div>
-                </button>
-                
-                <button class="content-button qa" onclick="selectContentType('qa')">
-                    🔍 Generate Questions from Text
-                    <div class="content-button-desc">Let T5 generate questions from your input text</div>
-                </button>
+            <div class="form-section">
+                <h3>📝 Content Type</h3>
+                <div class="content-buttons">
+                    <button class="content-button summary" onclick="selectContentType('summary')">
+                        📄 Text Summarization
+                        <div class="content-button-desc">Generate AI summary of the selected text</div>
+                    </button>
+                    
+                    <button class="content-button multiple_choice" onclick="selectContentType('multiple_choice')">
+                        🎯 Multiple Choice Quiz
+                        <div class="content-button-desc">Generate quiz with multiple choice questions</div>
+                    </button>
+                    
+                    <button class="content-button qa" onclick="selectContentType('qa')">
+                        🔍 Generate Questions from Text
+                        <div class="content-button-desc">Let T5 generate questions from your input text</div>
+                    </button>
+                    
+                    <button class="content-button hybrid" onclick="selectContentType('t5_questions_ai_answers')">
+                        🤖 T5 Questions + AI Answers
+                        <div class="content-button-desc">T5 generates questions, OpenAI creates answers & alternatives</div>
+                    </button>
+                </div>
             </div>
-            
-            <!-- Summary Length Options (hidden by default) -->
-            <div id="summary-options" class="summary-options">
-                <button type="button" class="summary-length-btn" data-length="short">📋 Short Summary</button>
-                <button type="button" class="summary-length-btn selected" data-length="medium">📄 Medium Summary</button>
-                <button type="button" class="summary-length-btn" data-length="long">📚 Long Summary</button>
+
+            <div class="form-section">
+                <h3>⚙️ Settings</h3>
+                
+                <!-- Number of Questions -->
+                <div style="margin-bottom: 20px;">
+                    <label for="num_questions" style="display: block; font-weight: bold; margin-bottom: 8px;">
+                        📊 Number of Questions/Items:
+                    </label>
+                    <select id="num_questions" name="num_questions" style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 5px; font-size: 16px;">
+                        <option value="3">3 Questions</option>
+                        <option value="5" selected>5 Questions</option>
+                        <option value="7">7 Questions</option>
+                        <option value="10">10 Questions</option>
+                        <option value="15">15 Questions</option>
+                        <option value="20">20 Questions</option>
+                    </select>
+                </div>
+                
+                <!-- Summary Options (hidden by default) -->
+                <div id="summary-options" style="display: none; margin-bottom: 20px;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 8px;">
+                        📏 Summary Length:
+                    </label>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                        <button type="button" class="length-button" onclick="selectSummaryLength('short')" data-length="short">
+                            ⚡ Short
+                        </button>
+                        <button type="button" class="length-button" onclick="selectSummaryLength('medium')" data-length="medium">
+                            📝 Medium
+                        </button>
+                        <button type="button" class="length-button active" onclick="selectSummaryLength('long')" data-length="long">
+                            📖 Long
+                        </button>
+                    </div>
+                    <input type="hidden" id="summary_length" name="summary_length" value="long">
+                </div>
             </div>
             
             <!-- Hidden form -->
             <form id="content-form" method="POST" action="/start_quiz" style="display: none;">
                 <input type="hidden" id="question_type" name="question_type" value="">
                 <input type="hidden" id="text_selection_input" name="text_selection" value="all">
-                <input type="hidden" id="num_questions" name="num_questions" value="5">
-                <input type="hidden" id="summary_length" name="summary_length" value="medium">
             </form>
             
             {% else %}
@@ -359,7 +474,7 @@ MAIN_TEMPLATE = """
             // Show/hide summary options
             const summaryOptions = document.getElementById('summary-options');
             if (type === 'summary') {
-                summaryOptions.style.display = 'grid';
+                summaryOptions.style.display = 'block';
             } else {
                 summaryOptions.style.display = 'none';
                 
@@ -368,14 +483,26 @@ MAIN_TEMPLATE = """
                     showChatbot();
                     return; // Don't submit form for chatbot
                 } else {
-                    // Set default number of questions for other types
-                    document.getElementById('num_questions').value = '5';
-                    
                     // Submit immediately for non-summary, non-chatbot types
                     document.getElementById('text_selection_input').value = document.getElementById('text-selection').value;
                     document.getElementById('content-form').submit();
                 }
             }
+        }
+        
+        function selectSummaryLength(length) {
+            // Update hidden input
+            document.getElementById('summary_length').value = length;
+            
+            // Update button states
+            document.querySelectorAll('.length-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector(`[data-length="${length}"]`).classList.add('active');
+            
+            // Auto-submit form when summary length is selected
+            document.getElementById('text_selection_input').value = document.getElementById('text-selection').value;
+            document.getElementById('content-form').submit();
         }
         
         function showChatbot() {
@@ -477,24 +604,6 @@ MAIN_TEMPLATE = """
             });
         }
         
-        // Handle summary length selection
-        document.querySelectorAll('.summary-length-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                // Remove selected class from all buttons
-                document.querySelectorAll('.summary-length-btn').forEach(b => b.classList.remove('selected'));
-                // Add selected class to clicked button
-                this.classList.add('selected');
-                
-                selectedSummaryLength = this.dataset.length;
-                document.getElementById('summary_length').value = selectedSummaryLength;
-                document.getElementById('num_questions').value = '1'; // Only 1 summary
-                
-                // Submit form
-                document.getElementById('text_selection_input').value = document.getElementById('text-selection').value;
-                document.getElementById('content-form').submit();
-            });
-        });
-        
         // PDF Upload Functions
         function handleDragOver(e) {
             e.preventDefault();
@@ -551,7 +660,7 @@ MAIN_TEMPLATE = """
 </html>
 """
 
-# Quiz playing template
+# Quiz playing template with PDF viewer
 QUIZ_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -561,176 +670,288 @@ QUIZ_TEMPLATE = """
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
+            margin: 0;
+            padding: 0;
+            background: #f5f5f5;
+        }
+        
+        .quiz-container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        .pdf-panel {
+            width: 50%;
+            background: white;
+            border-right: 2px solid #ddd;
+        }
+        
+        .quiz-panel {
+            width: 50%;
+            overflow-y: auto;
             padding: 20px;
             background: #f5f5f5;
         }
+        
+        .pdf-viewer {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .pdf-header {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .pdf-content {
+            height: calc(100% - 50px);
+        }
+        
         .container {
             background: white;
-            padding: 30px;
+            padding: 20px;
             border-radius: 10px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
         }
+        
         .quiz-header {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }
+        
         .progress {
             background: #e9ecef;
             border-radius: 10px;
-            height: 20px;
-            margin: 20px 0;
+            height: 15px;
+            margin: 15px 0;
         }
+        
         .progress-bar {
             background: #28a745;
-            height: 20px;
+            height: 15px;
             border-radius: 10px;
             transition: width 0.3s ease;
         }
+        
         .question-container {
             background: #f8f9fa;
-            padding: 25px;
+            padding: 20px;
             border-radius: 10px;
-            margin: 20px 0;
+            margin: 15px 0;
             border-left: 5px solid #007bff;
         }
+        
         .question-text {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: bold;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             color: #333;
+            line-height: 1.4;
         }
+        
         .alternative {
             background: white;
             border: 2px solid #ddd;
-            padding: 15px;
-            margin: 10px 0;
+            padding: 12px;
+            margin: 8px 0;
             border-radius: 8px;
             cursor: pointer;
             transition: all 0.3s ease;
-            font-size: 16px;
+            font-size: 14px;
         }
+        
         .alternative:hover {
             border-color: #007bff;
             background: #f0f8ff;
         }
+        
         .alternative.correct {
             background: #d4edda;
             border-color: #28a745;
             color: #155724;
         }
+        
         .alternative.incorrect {
             background: #f8d7da;
             border-color: #dc3545;
             color: #721c24;
         }
+        
         .alternative.disabled {
             cursor: not-allowed;
             opacity: 0.6;
         }
+        
         .feedback {
-            margin: 20px 0;
-            padding: 15px;
+            margin: 15px 0;
+            padding: 12px;
             border-radius: 8px;
             font-weight: bold;
+            font-size: 14px;
         }
+        
         .feedback.correct {
             background: #d4edda;
             color: #155724;
             border: 1px solid #c3e6cb;
         }
+        
         .feedback.incorrect {
             background: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
+        
         .nav-buttons {
             text-align: center;
-            margin-top: 30px;
+            margin-top: 20px;
         }
+        
         button {
             background: #007bff;
             color: white;
             border: none;
-            padding: 12px 24px;
+            padding: 10px 20px;
             border-radius: 5px;
             cursor: pointer;
             margin: 5px;
-            font-size: 16px;
+            font-size: 14px;
         }
+        
         button:hover {
             background: #0056b3;
         }
+        
         button.success {
             background: #28a745;
         }
+        
         button.secondary {
             background: #6c757d;
         }
+        
         .score-display {
             text-align: center;
-            font-size: 18px;
-            margin: 20px 0;
+            font-size: 16px;
+            margin: 15px 0;
             color: #333;
+        }
+        
+        .toggle-pdf {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        @media (max-width: 768px) {
+            .quiz-container {
+                flex-direction: column;
+            }
+            .pdf-panel, .quiz-panel {
+                width: 100%;
+            }
+            .pdf-panel {
+                height: 40vh;
+            }
+            .quiz-panel {
+                height: 60vh;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="quiz-header">
-            <h1>🎯 Quiz Question {{ current_question + 1 }} of {{ total_questions }}</h1>
-            <div class="progress">
-                <div class="progress-bar" style="width: {{ (current_question / total_questions * 100)|round }}%"></div>
-            </div>
-            <div class="score-display">Score: {{ score }} / {{ current_question }}</div>
-        </div>
-        
-        <div class="question-container">
-            <div class="question-text">
-                {% if question_data.type == 'true_false' %}
-                    <span style="color: #28a745; font-weight: bold;">🎯 True or False:</span><br>
-                    {{ question_data.question }}
-                {% elif question_data.type == 'fill_blank' %}
-                    <span style="color: #007bff; font-weight: bold;">📝 Fill in the blank:</span><br>
-                    {{ question_data.question }}
-                {% else %}
-                    <span style="color: #dc3545; font-weight: bold;">🔤 Multiple Choice:</span><br>
-                    {{ question_data.question }}
+    <button class="toggle-pdf" onclick="togglePdf()">📄 Toggle PDF</button>
+    
+    <div class="quiz-container">
+        <div class="pdf-panel" id="pdfPanel">
+            <div class="pdf-header">
+                📄 PDF Document
+                {% if pdf_filename %}
+                - {{ pdf_filename }}
                 {% endif %}
             </div>
-            
-            {% for alt in question_data.alternatives %}
-            <div class="alternative {% if answered %}{% if loop.index0 == question_data.correct_index %}correct{% elif user_answer == loop.index0 %}incorrect{% endif %} disabled{% endif %}" 
-                 onclick="{% if not answered %}answerQuestion({{ loop.index0 }}){% endif %}">
-                {% if question_data.type == 'fill_blank' %}
-                    {{ ['A', 'B', 'C'][loop.index0] }}. {{ alt }}
+            <div class="pdf-content">
+                {% if has_pdf %}
+                <iframe class="pdf-viewer" src="/view_pdf" type="application/pdf"></iframe>
                 {% else %}
-                    {{ ['A', 'B', 'C', 'D'][loop.index0] }}. {{ alt }}
+                <div style="padding: 20px; text-align: center; color: #666;">
+                    <p>📄 No PDF loaded</p>
+                    <p>Upload a PDF to view it alongside the quiz</p>
+                </div>
                 {% endif %}
             </div>
-            {% endfor %}
         </div>
         
-        {% if answered %}
-        <div class="feedback {% if correct %}correct{% else %}incorrect{% endif %}">
-            {% if correct %}
-                ✅ Correct! Well done!
-            {% else %}
-                ❌ Incorrect. The correct answer was: {{ ['A', 'B', 'C', 'D'][question_data.correct_index] }}. {{ question_data.alternatives[question_data.correct_index] }}
-            {% endif %}
-        </div>
-        {% endif %}
-        
-        <div class="nav-buttons">
-            {% if answered %}
-                {% if current_question + 1 < total_questions %}
-                    <a href="/quiz/next"><button class="success">Next Question ➡️</button></a>
-                {% else %}
-                    <a href="/quiz/results"><button class="success">View Final Results 🏆</button></a>
+        <div class="quiz-panel">
+            <div class="container">
+                <div class="quiz-header">
+                    <h2>🎯 Question {{ current_question + 1 }} of {{ total_questions }}</h2>
+                    <div class="progress">
+                        <div class="progress-bar" style="width: {{ (current_question / total_questions * 100)|round }}%"></div>
+                    </div>
+                    <div class="score-display">Score: {{ score }} / {{ current_question }}</div>
+                </div>
+                
+                <div class="question-container">
+                    <div class="question-text">
+                        {% if question_data.type == 'true_false' %}
+                            <span style="color: #28a745; font-weight: bold;">🎯 True or False:</span><br>
+                            {{ question_data.question }}
+                        {% elif question_data.type == 'fill_blank' %}
+                            <span style="color: #007bff; font-weight: bold;">📝 Fill in the blank:</span><br>
+                            {{ question_data.question }}
+                        {% else %}
+                            <span style="color: #dc3545; font-weight: bold;">🔤 Multiple Choice:</span><br>
+                            {{ question_data.question }}
+                        {% endif %}
+                    </div>
+                    
+                    {% for alt in question_data.alternatives %}
+                    <div class="alternative {% if answered %}{% if loop.index0 == question_data.correct_index %}correct{% elif user_answer == loop.index0 %}incorrect{% endif %} disabled{% endif %}" 
+                         onclick="{% if not answered %}answerQuestion({{ loop.index0 }}){% endif %}">
+                        {% if question_data.type == 'fill_blank' %}
+                            {{ ['A', 'B', 'C'][loop.index0] }}. {{ alt }}
+                        {% else %}
+                            {{ ['A', 'B', 'C', 'D'][loop.index0] }}. {{ alt }}
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                {% if answered %}
+                <div class="feedback {% if correct %}correct{% else %}incorrect{% endif %}">
+                    {% if correct %}
+                        ✅ Correct! Well done!
+                    {% else %}
+                        ❌ Incorrect. The correct answer was: {{ ['A', 'B', 'C', 'D'][question_data.correct_index] }}. {{ question_data.alternatives[question_data.correct_index] }}
+                    {% endif %}
+                </div>
                 {% endif %}
-            {% endif %}
-            <a href="/"><button class="secondary">Back to Home 🏠</button></a>
+                
+                <div class="nav-buttons">
+                    {% if answered %}
+                        {% if current_question + 1 < total_questions %}
+                            <a href="/quiz/next"><button class="success">Next Question ➡️</button></a>
+                        {% else %}
+                            <a href="/quiz/results"><button class="success">View Final Results 🏆</button></a>
+                        {% endif %}
+                    {% endif %}
+                    <a href="/"><button class="secondary">Back to Home 🏠</button></a>
+                </div>
+            </div>
         </div>
     </div>
     
@@ -753,12 +974,25 @@ QUIZ_TEMPLATE = """
                 console.error('Error:', error);
             });
         }
+        
+        function togglePdf() {
+            const pdfPanel = document.getElementById('pdfPanel');
+            const quizPanel = document.querySelector('.quiz-panel');
+            
+            if (pdfPanel.style.display === 'none') {
+                pdfPanel.style.display = 'block';
+                quizPanel.style.width = '50%';
+            } else {
+                pdfPanel.style.display = 'none';
+                quizPanel.style.width = '100%';
+            }
+        }
     </script>
 </body>
 </html>
 """
 
-# Q&A template for displaying question-answer pairs
+# Q&A template for displaying question-answer pairs with PDF viewer
 QA_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -768,121 +1002,241 @@ QA_TEMPLATE = """
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
+            margin: 0;
+            padding: 0;
+            background: #f5f5f5;
+        }
+        
+        .qa-container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        .pdf-panel {
+            width: 50%;
+            background: white;
+            border-right: 2px solid #ddd;
+        }
+        
+        .qa-panel {
+            width: 50%;
+            overflow-y: auto;
             padding: 20px;
             background: #f5f5f5;
         }
+        
+        .pdf-viewer {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .pdf-header {
+            background: #ffc107;
+            color: #212529;
+            padding: 10px 20px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .pdf-content {
+            height: calc(100% - 50px);
+        }
+        
         .container {
             background: white;
-            padding: 30px;
+            padding: 20px;
             border-radius: 10px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
         }
+        
         .qa-header {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }
+        
         .progress {
             background: #e9ecef;
             border-radius: 10px;
-            height: 20px;
-            margin: 20px 0;
+            height: 15px;
+            margin: 15px 0;
         }
+        
         .progress-bar {
             background: #ffd700;
-            height: 20px;
+            height: 15px;
             border-radius: 10px;
             transition: width 0.3s ease;
         }
+        
         .question-container {
             background: #fff3cd;
-            padding: 25px;
+            padding: 20px;
             border-radius: 10px;
-            margin: 20px 0;
+            margin: 15px 0;
             border-left: 5px solid #ffc107;
         }
+        
         .question-text {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: bold;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             color: #856404;
+            line-height: 1.4;
         }
+        
         .answer-container {
             background: #d1ecf1;
-            padding: 25px;
+            padding: 20px;
             border-radius: 10px;
-            margin: 20px 0;
+            margin: 15px 0;
             border-left: 5px solid #17a2b8;
         }
+        
         .answer-text {
-            font-size: 16px;
+            font-size: 14px;
             line-height: 1.6;
             color: #0c5460;
         }
+        
         .nav-buttons {
             text-align: center;
-            margin-top: 30px;
+            margin-top: 20px;
         }
+        
         button {
             background: #ffc107;
             color: #212529;
             border: none;
-            padding: 12px 24px;
+            padding: 10px 20px;
             border-radius: 5px;
             cursor: pointer;
             margin: 5px;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: bold;
         }
+        
         button:hover {
             background: #e0a800;
         }
+        
         button.secondary {
             background: #6c757d;
             color: white;
         }
+        
         .qa-counter {
             text-align: center;
-            font-size: 18px;
-            margin: 20px 0;
+            font-size: 16px;
+            margin: 15px 0;
             color: #333;
+        }
+        
+        .toggle-pdf {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: #ffc107;
+            color: #212529;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        @media (max-width: 768px) {
+            .qa-container {
+                flex-direction: column;
+            }
+            .pdf-panel, .qa-panel {
+                width: 100%;
+            }
+            .pdf-panel {
+                height: 40vh;
+            }
+            .qa-panel {
+                height: 60vh;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="qa-header">
-            <h1>💬 Q&A Session - Pair {{ current_question + 1 }} of {{ total_questions }}</h1>
-            <div class="progress">
-                <div class="progress-bar" style="width: {{ ((current_question + 1) / total_questions * 100)|round }}%"></div>
+    <button class="toggle-pdf" onclick="togglePdf()">📄 Toggle PDF</button>
+    
+    <div class="qa-container">
+        <div class="pdf-panel" id="pdfPanel">
+            <div class="pdf-header">
+                📄 PDF Document
+                {% if pdf_filename %}
+                - {{ pdf_filename }}
+                {% endif %}
             </div>
-            <div class="qa-counter">Q&A Pair {{ current_question + 1 }}</div>
+            <div class="pdf-content">
+                {% if has_pdf %}
+                <iframe class="pdf-viewer" src="/view_pdf" type="application/pdf"></iframe>
+                {% else %}
+                <div style="padding: 20px; text-align: center; color: #666;">
+                    <p>📄 No PDF loaded</p>
+                    <p>Upload a PDF to view it alongside the Q&A</p>
+                </div>
+                {% endif %}
+            </div>
         </div>
         
-        <div class="question-container">
-            <div class="question-text">
-                ❓ <strong>Fråga:</strong><br>
-                {{ question_data.question }}
+        <div class="qa-panel">
+            <div class="container">
+                <div class="qa-header">
+                    <h2>💬 Q&A Session - Pair {{ current_question + 1 }} of {{ total_questions }}</h2>
+                    <div class="progress">
+                        <div class="progress-bar" style="width: {{ ((current_question + 1) / total_questions * 100)|round }}%"></div>
+                    </div>
+                    <div class="qa-counter">Q&A Pair {{ current_question + 1 }}</div>
+                </div>
+                
+                <div class="question-container">
+                    <div class="question-text">
+                        ❓ <strong>Fråga:</strong><br>
+                        {{ question_data.question }}
+                    </div>
+                </div>
+                
+                <div class="answer-container">
+                    <div class="answer-text">
+                        🤖 <strong>T5 Model Svar:</strong><br>
+                        {{ question_data.answer }}
+                    </div>
+                </div>
+                
+                <div class="nav-buttons">
+                    {% if current_question + 1 < total_questions %}
+                        <a href="/quiz/next"><button>Nästa Q&A ➡️</button></a>
+                    {% else %}
+                        <a href="/quiz/results"><button>Visa Alla Q&A 📋</button></a>
+                    {% endif %}
+                    <a href="/"><button class="secondary">Hem 🏠</button></a>
+                </div>
             </div>
-        </div>
-        
-        <div class="answer-container">
-            <div class="answer-text">
-                🤖 <strong>T5 Model Svar:</strong><br>
-                {{ question_data.answer }}
-            </div>
-        </div>
-        
-        <div class="nav-buttons">
-            {% if current_question + 1 < total_questions %}
-                <a href="/quiz/next"><button>Nästa Q&A ➡️</button></a>
-            {% else %}
-                <a href="/quiz/results"><button>Visa Alla Q&A 📋</button></a>
-            {% endif %}
-            <a href="/"><button class="secondary">Hem 🏠</button></a>
         </div>
     </div>
+    
+    <script>
+        function togglePdf() {
+            const pdfPanel = document.getElementById('pdfPanel');
+            const qaPanel = document.querySelector('.qa-panel');
+            
+            if (pdfPanel.style.display === 'none') {
+                pdfPanel.style.display = 'block';
+                qaPanel.style.width = '50%';
+            } else {
+                pdfPanel.style.display = 'none';
+                qaPanel.style.width = '100%';
+            }
+        }
+    </script>
 </body>
 </html>
 """
@@ -1280,6 +1634,7 @@ def process_pdf():
 @app.route('/upload_pdf', methods=['POST'])
 def upload_pdf():
     """Handle PDF file upload and processing"""
+    global current_pdf_path
     try:
         if 'pdf' not in request.files:
             return jsonify({'success': False, 'message': 'No PDF file uploaded'})
@@ -1296,6 +1651,9 @@ def upload_pdf():
         filepath = Path(filename)
         file.save(str(filepath))
         
+        # Track the uploaded PDF for viewing
+        current_pdf_path = str(filepath.absolute())
+        
         # Process with Smart PDF processor
         from smart_pdf_processor import SmartPDFProcessor
         processor = SmartPDFProcessor()
@@ -1305,7 +1663,7 @@ def upload_pdf():
         
         return jsonify({
             'success': True, 
-            'message': f'Successfully processed {filename}! {len(cleaned_text):,} characters extracted.'
+            'message': f'Successfully processed {filename}! {len(cleaned_text):,} characters extracted. PDF viewer ready.'
         })
         
     except Exception as e:
@@ -1341,15 +1699,21 @@ def start_quiz():
         # Filter texts based on selection
         if text_selection == 'all':
             texts = all_texts
+            # For all texts, try to find PDF for the first one
+            selected_text_names = list(all_texts.keys())
         else:
             if text_selection in all_texts:
                 texts = {text_selection: all_texts[text_selection]}
+                selected_text_names = [text_selection]
                 print(f"📄 Processing only selected text: {text_selection}")
             else:
                 return render_template_string(MAIN_TEMPLATE, 
                                             model_loaded=True,
                                             extracted_texts=all_texts,
                                             output=f"❌ Selected text '{text_selection}' not found.")
+        
+        # Automatically find and set matching PDF
+        set_current_pdf_from_text(selected_text_names)
         
         # Handle different content types
         if question_type == "summary":
@@ -1358,6 +1722,8 @@ def start_quiz():
             return handle_quiz_generation(texts, question_type, num_questions)
         elif question_type == "qa":
             return handle_qa_generation(texts, num_questions)
+        elif question_type == "t5_questions_ai_answers":
+            return handle_hybrid_generation(texts, num_questions)
         else:
             return render_template_string(MAIN_TEMPLATE, 
                                         model_loaded=True,
@@ -1476,6 +1842,44 @@ def handle_qa_generation(texts, num_questions):
     # Redirect to first question
     return redirect('/quiz/question')
 
+def handle_hybrid_generation(texts, num_questions):
+    """Handle hybrid generation"""
+    all_questions = []
+    
+    for text_name, text_content in texts.items():
+        questions = quiz_generator.generate_questions_from_text(
+            text_content, num_questions, question_type="t5_questions_ai_answers"
+        )
+        
+        if questions:
+            for question in questions:
+                # Parse different question formats
+                parsed_question = _parse_question_format(question, "t5_questions_ai_answers")
+                if parsed_question:
+                    parsed_question['source'] = text_name
+                    all_questions.append(parsed_question)
+    
+    if not all_questions:
+        return render_template_string(MAIN_TEMPLATE, 
+                                    model_loaded=True,
+                                    extracted_texts=texts,
+                                    output="❌ No valid questions could be generated.")
+    
+    # Shuffle questions and store in session
+    import random
+    random.shuffle(all_questions)
+    session['quiz_questions'] = all_questions
+    session['current_question'] = 0
+    session['score'] = 0
+    session['question_results'] = []
+    
+    # Clear any previous answer state to prevent auto-answer bug
+    session.pop('question_answered', None)
+    session.pop('user_answer', None)
+    
+    # Redirect to first question
+    return redirect('/quiz/question')
+
 def _parse_question_format(question: str, question_type: str) -> dict:
     """Parse question formats into a unified structure"""
     lines = question.strip().split('\n')
@@ -1529,6 +1933,37 @@ def _parse_question_format(question: str, question_type: str) -> dict:
                     'type': 'multiple_choice'
                 }
     
+    elif question_type == "t5_questions_ai_answers":
+        # T5+OpenAI hybrid format: Should be multiple choice questions  
+        if len(lines) >= 6:
+            question_text = lines[0]
+            alternatives = []
+            correct_answer = ""
+            
+            # Extract alternatives
+            for line in lines[1:5]:
+                if line.strip().startswith(('A)', 'B)', 'C)', 'D)')):
+                    alternatives.append(line.strip()[2:].strip())
+            
+            # Extract correct answer
+            for line in lines:
+                if line.strip().startswith('Correct:'):
+                    correct_answer = line.strip().split(':')[1].strip()
+                    break
+            
+            if len(alternatives) >= 3 and correct_answer:
+                # Handle both 3 and 4 alternatives
+                while len(alternatives) < 4:
+                    alternatives.append("None of the above")
+                    
+                correct_index = ord(correct_answer) - ord('A')
+                return {
+                    'question': question_text,
+                    'alternatives': alternatives,
+                    'correct_index': correct_index,
+                    'type': 'multiple_choice'  # Treat as multiple choice for display
+                }
+    
     return None
 
 @app.route('/quiz/question')
@@ -1544,12 +1979,19 @@ def quiz_question():
     
     question_data = questions[current_q]
     
+    # Check if we have a PDF to display
+    global current_pdf_path
+    has_pdf = current_pdf_path and Path(current_pdf_path).exists()
+    pdf_filename = Path(current_pdf_path).name if has_pdf else None
+    
     # Handle Q&A format differently (no scoring, just display)
     if question_data.get('type') == 'qa':
         return render_template_string(QA_TEMPLATE,
                                     current_question=current_q,
                                     total_questions=len(questions),
-                                    question_data=question_data)
+                                    question_data=question_data,
+                                    has_pdf=has_pdf,
+                                    pdf_filename=pdf_filename)
     
     # Handle quiz questions (multiple choice, etc.)
     answered = session.get('question_answered', False)
@@ -1566,7 +2008,9 @@ def quiz_question():
                                 question_data=question_data,
                                 answered=answered,
                                 user_answer=user_answer,
-                                correct=correct)
+                                correct=correct,
+                                has_pdf=has_pdf,
+                                pdf_filename=pdf_filename)
 
 @app.route('/quiz/answer', methods=['POST'])
 def quiz_answer():
@@ -1677,6 +2121,7 @@ def quiz_results():
 @app.route('/process_smart_pdf', methods=['POST'])
 def process_smart_pdf():
     """Process PDF with the smart hybrid approach"""
+    global current_pdf_path
     try:
         pdf_path = "Attention_is_all_you_need_v7.pdf"
         
@@ -1685,6 +2130,9 @@ def process_smart_pdf():
                                         model_loaded=bool(quiz_generator and quiz_generator.setup_success),
                                         extracted_texts=load_extracted_texts(),
                                         output="❌ Attention PDF not found in current directory")
+        
+        # Track the PDF for viewing
+        current_pdf_path = str(Path(pdf_path).absolute())
         
         # Import smart processor
         from smart_pdf_processor import SmartPDFProcessor
@@ -1705,6 +2153,7 @@ def process_smart_pdf():
 • Characters extracted: {len(cleaned_text):,}
 • Method: PyMuPDF + OpenAI cleaning (when API works)
 • Saved as: Attention_is_all_you_need_v7_SMART.txt
+• 📄 PDF viewer ready for quiz mode
 
 🎯 The cleaned text is now available for quiz generation!
 You can now use 'AI Questions + T5 Answers (Hybrid)' with this high-quality text.""")
@@ -1808,6 +2257,16 @@ def generate_questions_from_text():
             'success': False,
             'error': f'Error generating questions: {str(e)}'
         })
+
+@app.route('/view_pdf')
+def view_pdf():
+    """Serve the current PDF file for viewing"""
+    global current_pdf_path
+    if current_pdf_path and Path(current_pdf_path).exists():
+        return send_file(current_pdf_path, mimetype='application/pdf')
+    else:
+        # Return a simple message if no PDF is available
+        return "No PDF available for viewing", 404
 
 if __name__ == '__main__':
     print("🌐 Starting PDF-to-Quiz Web Interface...")
