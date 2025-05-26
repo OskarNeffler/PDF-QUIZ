@@ -58,7 +58,7 @@ class OpenAIPDFExtractor:
         print("\n✅ Simple setup - just API key!")
         print("="*50 + "\n")
     
-    def _pdf_to_images(self, pdf_path: str, max_pages: int = 5) -> list:
+    def _pdf_to_images(self, pdf_path: str, max_pages: int = 15) -> list:
         """Convert PDF pages to base64 images"""
         images = []
         
@@ -141,17 +141,19 @@ class OpenAIPDFExtractor:
                 })
             
             # Create prompt
-            prompt = """Extract all text content from these PDF pages.
+            prompt = """Extract ALL text content from these PDF pages exactly as written.
 
-Return clean, readable text that captures:
-- Main content and key information
-- Technical details and facts
-- Important statements and concepts
+IMPORTANT: Do NOT summarize, paraphrase, or rewrite anything. 
+Extract the complete, verbatim text content including:
+- All paragraphs and sentences exactly as written
+- All technical terms, definitions, and explanations
+- All section headings and subheadings
+- All equations, formulas, and technical content
+- All examples and detailed explanations
 
-Skip headers, footers, page numbers, and navigation elements.
-Format as natural, flowing text suitable for reading and quiz generation.
-
-Combine all pages into one coherent text."""
+Skip only: headers, footers, page numbers, references to figures/tables.
+Preserve the original wording and structure.
+Return the COMPLETE text from all pages."""
 
             # Make API call
             response = self.client.chat.completions.create(
@@ -165,7 +167,7 @@ Combine all pages into one coherent text."""
                         ]
                     }
                 ],
-                max_tokens=2000
+                max_tokens=4000  # Increased for longer PDFs
             )
             
             # Update cost tracking
