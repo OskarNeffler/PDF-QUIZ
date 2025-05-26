@@ -363,17 +363,142 @@ MAIN_TEMPLATE = """
             } else {
                 summaryOptions.style.display = 'none';
                 
-                // Set default number of questions based on type
+                // Handle chatbot (qa) type specially
                 if (type === 'qa') {
-                    document.getElementById('num_questions').value = '3';  // Fewer Q&A pairs
+                    showChatbot();
+                    return; // Don't submit form for chatbot
                 } else {
-                    document.getElementById('num_questions').value = '5';  // Default for quiz
+                    // Set default number of questions for other types
+                    document.getElementById('num_questions').value = '5';
+                    
+                    // Submit immediately for non-summary, non-chatbot types
+                    document.getElementById('text_selection_input').value = document.getElementById('text-selection').value;
+                    document.getElementById('content-form').submit();
+                }
+            }
+        }
+        
+        function showChatbot() {
+            // Hide the content selection area and show chatbot interface
+            const contentSection = document.querySelector('.section:nth-child(3)');
+            contentSection.innerHTML = `
+                <h3>💬 Chat with T5 Model</h3>
+                <p>Ask your T5 model any question directly!</p>
+                
+                <div style="margin: 20px 0;">
+                    <input type="text" id="chatbot-question" placeholder="Type your question here..." 
+                           style="width: 70%; padding: 12px; font-size: 16px;" onkeypress="handleChatKeyPress(event)">
+                    <button onclick="askT5Question()" style="padding: 12px 20px; font-size: 16px; margin-left: 10px;">Ask 💬</button>
+                </div>
+                
+                <div id="chat-history" style="background: #f8f9fa; padding: 20px; border-radius: 10px; min-height: 200px; max-height: 400px; overflow-y: auto; border: 1px solid #ddd;">
+                    <p style="color: #666; text-align: center; margin: 50px 0;">Ask me anything! I'll do my best to answer using my T5 knowledge.</p>
+                </div>
+                
+                <div style="margin-top: 15px;">
+                    <button onclick="location.reload()" style="background: #6c757d;">🔄 Back to Main Menu</button>
+                </div>
+            `;
+            
+            // Focus on the input field
+            setTimeout(() => {
+                document.getElementById('chatbot-question').focus();
+            }, 100);
+        }
+        
+        function handleChatKeyPress(event) {
+            if (event.key === 'Enter') {
+                askT5Question();
+            }
+        }
+        
+        function askT5Question() {
+            const questionInput = document.getElementById('chatbot-question');
+            const question = questionInput.value.trim();
+            
+            if (!question) {
+                alert('Please enter a question!');
+                return;
+            }
+            
+            // Clear input and show loading
+            questionInput.value = '';
+            const chatHistory = document.getElementById('chat-history');
+            
+            // Add user question to chat
+            chatHistory.innerHTML += `
+                <div style="margin: 10px 0; text-align: right;">
+                    <div style="background: #007bff; color: white; padding: 10px 15px; border-radius: 15px 15px 5px 15px; display: inline-block; max-width: 70%;">
+                        <strong>Du:</strong> ${question}
+                    </div>
+                </div>
+            `;
+            
+            // Add loading indicator
+            chatHistory.innerHTML += `
+                <div id="loading-message" style="margin: 10px 0;">
+                    <div style="background: #e9ecef; color: #666; padding: 10px 15px; border-radius: 15px 15px 15px 5px; display: inline-block; max-width: 70%;">
+                        <strong>T5:</strong> Thinking... 🤔
+                    </div>
+                </div>
+            `;
+            
+            // Scroll to bottom
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            
+            // Send question to backend
+            fetch('/ask_t5', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `user_question=${encodeURIComponent(question)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Remove loading message
+                document.getElementById('loading-message').remove();
+                
+                if (data.success) {
+                    // Add T5 response to chat
+                    chatHistory.innerHTML += `
+                        <div style="margin: 10px 0;">
+                            <div style="background: #28a745; color: white; padding: 10px 15px; border-radius: 15px 15px 15px 5px; display: inline-block; max-width: 70%;">
+                                <strong>T5:</strong> ${data.answer}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // Add error message to chat
+                    chatHistory.innerHTML += `
+                        <div style="margin: 10px 0;">
+                            <div style="background: #dc3545; color: white; padding: 10px 15px; border-radius: 15px 15px 15px 5px; display: inline-block; max-width: 70%;">
+                                <strong>Error:</strong> ${data.error}
+                            </div>
+                        </div>
+                    `;
                 }
                 
-                // Submit immediately for non-summary types
-                document.getElementById('text_selection_input').value = document.getElementById('text-selection').value;
-                document.getElementById('content-form').submit();
-            }
+                // Scroll to bottom
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            })
+            .catch(error => {
+                // Remove loading message
+                const loadingMsg = document.getElementById('loading-message');
+                if (loadingMsg) loadingMsg.remove();
+                
+                // Add error message to chat
+                chatHistory.innerHTML += `
+                    <div style="margin: 10px 0;">
+                        <div style="background: #dc3545; color: white; padding: 10px 15px; border-radius: 15px 15px 15px 5px; display: inline-block; max-width: 70%;">
+                            <strong>Error:</strong> Failed to get response from T5 model.
+                        </div>
+                    </div>
+                `;
+                
+                // Scroll to bottom
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            });
         }
         
         // Handle summary length selection
@@ -1613,6 +1738,39 @@ You can now use 'AI Questions + T5 Answers (Hybrid)' with this high-quality text
                                     model_loaded=bool(quiz_generator and quiz_generator.setup_success),
                                     extracted_texts=load_extracted_texts(),
                                     output=f"❌ Error processing PDF: {str(e)}")
+
+@app.route('/ask_t5', methods=['POST'])
+def ask_t5():
+    """Handle direct questions to T5 model (chatbot functionality)"""
+    user_question = request.form.get('user_question', '').strip()
+    
+    if not quiz_generator or not quiz_generator.setup_success:
+        return jsonify({
+            'success': False,
+            'error': 'Model not loaded. Please load the model first.'
+        })
+    
+    if not user_question:
+        return jsonify({
+            'success': False,
+            'error': 'Please enter a question.'
+        })
+    
+    try:
+        # Use T5 to directly answer the user's question
+        answer = quiz_generator.ask_direct_question(user_question)
+        
+        return jsonify({
+            'success': True,
+            'question': user_question,
+            'answer': answer
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error generating answer: {str(e)}'
+        })
 
 if __name__ == '__main__':
     print("🌐 Starting PDF-to-Quiz Web Interface...")
