@@ -1598,61 +1598,6 @@ def load_model():
                                 extracted_texts=extracted_texts,
                                 output=f"Model loading attempt completed.")
 
-@app.route('/process_pdf', methods=['POST'])
-def process_pdf():
-    pdf_path = request.form.get('pdf_path', '')
-    
-    if not pdf_path:
-        status = {'type': 'error', 'message': '❌ Please provide a PDF path'}
-        return render_template_string(MAIN_TEMPLATE, 
-                                    model_loaded=model_loaded,
-                                    model_path="models/trained_model_best",
-                                    status=status)
-    
-    try:
-        # Run PDF to text conversion
-        result = subprocess.run([
-            sys.executable, "pdf_to_text.py", pdf_path
-        ], capture_output=True, text=True, timeout=120)
-        
-        if result.returncode == 0:
-            status = {
-                'type': 'success',
-                'message': f'✅ PDF converted successfully: {os.path.basename(pdf_path)}'
-            }
-            output = result.stdout
-        else:
-            status = {
-                'type': 'error',
-                'message': f'❌ PDF conversion failed: {result.stderr}'
-            }
-            output = f"Error: {result.stderr}"
-            
-    except subprocess.TimeoutExpired:
-        status = {
-            'type': 'error',
-            'message': '❌ PDF conversion timed out (>2 minutes)'
-        }
-        output = "PDF conversion timed out"
-    except Exception as e:
-        status = {
-            'type': 'error',
-            'message': f'❌ Error processing PDF: {str(e)}'
-        }
-        output = f"Error: {str(e)}"
-    
-    try:
-        extracted_texts = load_extracted_texts()
-    except:
-        extracted_texts = {}
-    
-    return render_template_string(MAIN_TEMPLATE,
-                                model_loaded=model_loaded,
-                                model_path="models/trained_model_best", 
-                                status=status,
-                                extracted_texts=extracted_texts,
-                                output=output)
-
 @app.route('/upload_pdf', methods=['POST'])
 def upload_pdf():
     """Handle PDF file upload and processing"""

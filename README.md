@@ -116,16 +116,16 @@ Choose your question type:
 ```
 QUIZ_HELPER/
 ├── 📄 web_interface.py          # Main Flask web application
-├── 🤖 model_quiz_generator.py   # T5 model and question generation
-├── 📊 smart_pdf_processor.py    # Intelligent PDF processing
-├── 🔧 enhanced_quiz_system.py   # Advanced quiz generation
+├── 🧠 model_quiz_generator.py   # T5 Model & Quiz Logic
+├── 🔧 smart_pdf_processor.py    # Smart Hybrid PDF Processing
+├── 📊 enhanced_quiz_system.py   # Enhanced Quiz Features
 ├── 📑 direct_pdf_extractor.py   # Simple PDF text extraction
 ├── 📄 pdf_to_text.py           # PDF processing utilities
 ├── 📁 models/                   # T5 model files
 │   └── trained_model_best/     # Fine-tuned T5 model
 ├── 📁 openai_system/           # OpenAI integration
 ├── 📁 extracted_texts/         # Processed text files
-├── 📁 best_cheatsheets/        # Premium PDF collection
+├── 📁 best_cheatsheets/        # High-quality PDF cheatsheets
 ├── 📁 cheatsheets/             # Study material PDFs
 ├── 📁 uploads/                 # User uploaded files
 ├── 📄 smart_pdf_cache.json     # Smart processing cache
