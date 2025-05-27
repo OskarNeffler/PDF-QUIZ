@@ -15,6 +15,9 @@ from model_quiz_generator import ModelQuizGenerator, load_extracted_texts
 app = Flask(__name__)
 app.secret_key = 'quiz_generator_secret_key_2024'
 
+# Add enumerate to Jinja2 globals
+app.jinja_env.globals['enumerate'] = enumerate
+
 # Global variables
 quiz_generator = None
 model_loaded = False
@@ -684,13 +687,19 @@ QUIZ_TEMPLATE = """
             width: 50%;
             background: white;
             border-right: 2px solid #ddd;
+            display: none; /* Hidden by default */
         }
         
         .quiz-panel {
-            width: 50%;
+            width: 100%; /* Full width when PDF is hidden */
             overflow-y: auto;
             padding: 20px;
             background: #f5f5f5;
+            transition: width 0.3s ease;
+        }
+        
+        .quiz-panel.with-pdf {
+            width: 50%; /* Half width when PDF is shown */
         }
         
         .pdf-viewer {
@@ -699,295 +708,286 @@ QUIZ_TEMPLATE = """
             border: none;
         }
         
-        .pdf-header {
+        .toggle-pdf-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
             background: #007bff;
             color: white;
-            padding: 10px 20px;
-            text-align: center;
-            font-weight: bold;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            z-index: 1000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
         
-        .pdf-content {
-            height: calc(100% - 50px);
-        }
-        
-        .container {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        
-        .quiz-header {
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        
-        .progress {
-            background: #e9ecef;
-            border-radius: 10px;
-            height: 15px;
-            margin: 15px 0;
-        }
-        
-        .progress-bar {
-            background: #28a745;
-            height: 15px;
-            border-radius: 10px;
-            transition: width 0.3s ease;
+        .toggle-pdf-btn:hover {
+            background: #0056b3;
         }
         
         .question-container {
-            background: #f8f9fa;
-            padding: 20px;
+            background: white;
+            padding: 30px;
             border-radius: 10px;
-            margin: 15px 0;
-            border-left: 5px solid #007bff;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
         }
         
         .question-text {
-            font-size: 16px;
+            font-size: 18px;
             font-weight: bold;
-            margin-bottom: 15px;
             color: #333;
-            line-height: 1.4;
+            margin-bottom: 20px;
+            line-height: 1.6;
         }
         
-        .alternative {
-            background: white;
-            border: 2px solid #ddd;
-            padding: 12px;
-            margin: 8px 0;
-            border-radius: 8px;
+        .options {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .options li {
+            margin: 15px 0;
+        }
+        
+        .options input[type="radio"] {
+            margin-right: 10px;
+            transform: scale(1.2);
+        }
+        
+        .options label {
+            font-size: 16px;
             cursor: pointer;
-            transition: all 0.3s ease;
-            font-size: 14px;
+            padding: 10px;
+            border-radius: 5px;
+            display: block;
+            transition: background-color 0.2s;
         }
         
-        .alternative:hover {
-            border-color: #007bff;
-            background: #f0f8ff;
-        }
-        
-        .alternative.correct {
-            background: #d4edda;
-            border-color: #28a745;
-            color: #155724;
-        }
-        
-        .alternative.incorrect {
-            background: #f8d7da;
-            border-color: #dc3545;
-            color: #721c24;
-        }
-        
-        .alternative.disabled {
-            cursor: not-allowed;
-            opacity: 0.6;
+        .options label:hover {
+            background-color: #f8f9fa;
         }
         
         .feedback {
-            margin: 15px 0;
-            padding: 12px;
-            border-radius: 8px;
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
             font-weight: bold;
-            font-size: 14px;
         }
         
         .feedback.correct {
-            background: #d4edda;
+            background-color: #d4edda;
             color: #155724;
             border: 1px solid #c3e6cb;
         }
         
         .feedback.incorrect {
-            background: #f8d7da;
+            background-color: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
         
-        .nav-buttons {
+        .progress-bar {
+            background: #e9ecef;
+            height: 8px;
+            border-radius: 4px;
+            margin-bottom: 30px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            background: linear-gradient(90deg, #007bff, #0056b3);
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+        
+        .quiz-header {
             text-align: center;
-            margin-top: 20px;
+            margin-bottom: 30px;
         }
         
-        button {
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            margin: 5px;
-            font-size: 14px;
-        }
-        
-        button:hover {
-            background: #0056b3;
-        }
-        
-        button.success {
-            background: #28a745;
-        }
-        
-        button.secondary {
-            background: #6c757d;
-        }
-        
-        .score-display {
-            text-align: center;
-            font-size: 16px;
-            margin: 15px 0;
+        .quiz-header h1 {
             color: #333;
+            margin-bottom: 10px;
         }
         
-        .toggle-pdf {
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            z-index: 1000;
+        .question-counter {
+            color: #666;
+            font-size: 16px;
+        }
+        
+        .nav-buttons {
+            margin-top: 30px;
+            text-align: center;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 0 10px;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
             background: #007bff;
             color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 12px;
         }
         
-        @media (max-width: 768px) {
-            .quiz-container {
-                flex-direction: column;
-            }
-            .pdf-panel, .quiz-panel {
-                width: 100%;
-            }
-            .pdf-panel {
-                height: 40vh;
-            }
-            .quiz-panel {
-                height: 60vh;
-            }
+        .btn-primary:hover {
+            background: #0056b3;
+            transform: translateY(-1px);
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #545b62;
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .home-link {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: #28a745;
+            color: white;
+            padding: 10px 15px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 1000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        
+        .home-link:hover {
+            background: #1e7e34;
+            color: white;
+            text-decoration: none;
         }
     </style>
+    <script>
+        function togglePdf() {
+            const pdfPanel = document.querySelector('.pdf-panel');
+            const quizPanel = document.querySelector('.quiz-panel');
+            const toggleBtn = document.querySelector('.toggle-pdf-btn');
+            
+            if (pdfPanel.style.display === 'none' || pdfPanel.style.display === '') {
+                // Show PDF
+                pdfPanel.style.display = 'block';
+                quizPanel.classList.add('with-pdf');
+                toggleBtn.textContent = '📖 Hide PDF';
+                // Store state
+                localStorage.setItem('pdfVisible', 'true');
+            } else {
+                // Hide PDF
+                pdfPanel.style.display = 'none';
+                quizPanel.classList.remove('with-pdf');
+                toggleBtn.textContent = '📖 Show PDF';
+                // Store state
+                localStorage.setItem('pdfVisible', 'false');
+            }
+        }
+        
+        // Restore PDF visibility state on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const pdfVisible = localStorage.getItem('pdfVisible');
+            const toggleBtn = document.querySelector('.toggle-pdf-btn');
+            
+            if (pdfVisible === 'true') {
+                togglePdf(); // This will show the PDF
+            } else {
+                // Ensure PDF starts hidden (default state)
+                toggleBtn.textContent = '📖 Show PDF';
+            }
+        });
+    </script>
 </head>
 <body>
-    <button class="toggle-pdf" onclick="togglePdf()">📄 Toggle PDF</button>
+    <a href="/" class="home-link">🏠 Home</a>
+    
+    {% if has_pdf %}
+    <button class="toggle-pdf-btn" onclick="togglePdf()">📖 Show PDF</button>
     
     <div class="quiz-container">
-        <div class="pdf-panel" id="pdfPanel">
-            <div class="pdf-header">
-                📄 PDF Document
-                {% if pdf_filename %}
-                - {{ pdf_filename }}
-                {% endif %}
-            </div>
-            <div class="pdf-content">
-                {% if has_pdf %}
-                <iframe class="pdf-viewer" src="/view_pdf" type="application/pdf"></iframe>
-                {% else %}
-                <div style="padding: 20px; text-align: center; color: #666;">
-                    <p>📄 No PDF loaded</p>
-                    <p>Upload a PDF to view it alongside the quiz</p>
-                </div>
-                {% endif %}
-            </div>
+        <div class="pdf-panel">
+            <iframe class="pdf-viewer" src="/view_pdf" type="application/pdf"></iframe>
         </div>
         
         <div class="quiz-panel">
-            <div class="container">
-                <div class="quiz-header">
-                    <h2>🎯 Question {{ current_question + 1 }} of {{ total_questions }}</h2>
-                    <div class="progress">
-                        <div class="progress-bar" style="width: {{ (current_question / total_questions * 100)|round }}%"></div>
-                    </div>
-                    <div class="score-display">Score: {{ score }} / {{ current_question }}</div>
-                </div>
+    {% else %}
+    <div class="quiz-container">
+        <div class="quiz-panel" style="width: 100%;">
+    {% endif %}
+            <div class="quiz-header">
+                <h1>🎯 Quiz Question</h1>
+                <div class="question-counter">Question {{ current_question + 1 }} of {{ total_questions }}</div>
                 
-                <div class="question-container">
-                    <div class="question-text">
-                        {% if question_data.type == 'true_false' %}
-                            <span style="color: #28a745; font-weight: bold;">🎯 True or False:</span><br>
-                            {{ question_data.question }}
-                        {% elif question_data.type == 'fill_blank' %}
-                            <span style="color: #007bff; font-weight: bold;">📝 Fill in the blank:</span><br>
-                            {{ question_data.question }}
-                        {% else %}
-                            <span style="color: #dc3545; font-weight: bold;">🔤 Multiple Choice:</span><br>
-                            {{ question_data.question }}
-                        {% endif %}
-                    </div>
-                    
-                    {% for alt in question_data.alternatives %}
-                    <div class="alternative {% if answered %}{% if loop.index0 == question_data.correct_index %}correct{% elif user_answer == loop.index0 %}incorrect{% endif %} disabled{% endif %}" 
-                         onclick="{% if not answered %}answerQuestion({{ loop.index0 }}){% endif %}">
-                        {% if question_data.type == 'fill_blank' %}
-                            {{ ['A', 'B', 'C'][loop.index0] }}. {{ alt }}
-                        {% else %}
-                            {{ ['A', 'B', 'C', 'D'][loop.index0] }}. {{ alt }}
-                        {% endif %}
-                    </div>
-                    {% endfor %}
-                </div>
-                
-                {% if answered %}
-                <div class="feedback {% if correct %}correct{% else %}incorrect{% endif %}">
-                    {% if correct %}
-                        ✅ Correct! Well done!
-                    {% else %}
-                        ❌ Incorrect. The correct answer was: {{ ['A', 'B', 'C', 'D'][question_data.correct_index] }}. {{ question_data.alternatives[question_data.correct_index] }}
-                    {% endif %}
-                </div>
-                {% endif %}
-                
-                <div class="nav-buttons">
-                    {% if answered %}
-                        {% if current_question + 1 < total_questions %}
-                            <a href="/quiz/next"><button class="success">Next Question ➡️</button></a>
-                        {% else %}
-                            <a href="/quiz/results"><button class="success">View Final Results 🏆</button></a>
-                        {% endif %}
-                    {% endif %}
-                    <a href="/"><button class="secondary">Back to Home 🏠</button></a>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ ((current_question + 1) / total_questions * 100)|round }}%;"></div>
                 </div>
             </div>
+            
+            <form method="post" action="/quiz/answer">
+                <div class="question-container">
+                    <div class="question-text">{{ question_data.question }}</div>
+                    
+                    {% if question_data.type == 'multiple_choice' %}
+                        <ul class="options">
+                            {% for i, option in enumerate(question_data.alternatives) %}
+                            <li>
+                                <label>
+                                    <input type="radio" name="answer" value="{{ i }}" required
+                                           {% if answered and user_answer == i %}checked{% endif %}
+                                           {% if answered %}disabled{% endif %}>
+                                    {{ option }}
+                                </label>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    {% elif question_data.type == 'fill_blank' %}
+                        <input type="text" name="answer" placeholder="Enter your answer..." 
+                               style="width: 100%; padding: 12px; font-size: 16px; border: 2px solid #ddd; border-radius: 5px;" 
+                               {% if answered %}disabled{% endif %} required>
+                    {% endif %}
+                </div>
+                
+                <div class="nav-buttons">
+                    {% if not answered %}
+                        <button type="submit" class="btn btn-primary">Submit Answer</button>
+                    {% else %}
+                        {% if current_question + 1 < total_questions %}
+                            <a href="/quiz/next" class="btn btn-primary">Next Question →</a>
+                        {% else %}
+                            <a href="/quiz/results" class="btn btn-primary">See Results 🎯</a>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </form>
+            
+            {% if answered %}
+            <div class="feedback {{ 'correct' if correct else 'incorrect' }}">
+                {% if correct %}
+                    ✅ Correct! 
+                {% else %}
+                    ❌ Incorrect. The correct answer was: {{ question_data.alternatives[question_data.correct_index] }}
+                {% endif %}
+            </div>
+            {% endif %}
         </div>
     </div>
-    
-    <script>
-        function answerQuestion(answerIndex) {
-            fetch('/quiz/answer', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({answer: answerIndex})
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-            });
-        }
-        
-        function togglePdf() {
-            const pdfPanel = document.getElementById('pdfPanel');
-            const quizPanel = document.querySelector('.quiz-panel');
-            
-            if (pdfPanel.style.display === 'none') {
-                pdfPanel.style.display = 'block';
-                quizPanel.style.width = '50%';
-            } else {
-                pdfPanel.style.display = 'none';
-                quizPanel.style.width = '100%';
-            }
-        }
-    </script>
 </body>
 </html>
 """
@@ -1016,13 +1016,19 @@ QA_TEMPLATE = """
             width: 50%;
             background: white;
             border-right: 2px solid #ddd;
+            display: none; /* Hidden by default */
         }
         
         .qa-panel {
-            width: 50%;
+            width: 100%; /* Full width when PDF is hidden */
             overflow-y: auto;
             padding: 20px;
             background: #f5f5f5;
+            transition: width 0.3s ease;
+        }
+        
+        .qa-panel.with-pdf {
+            width: 50%; /* Half width when PDF is shown */
         }
         
         .pdf-viewer {
@@ -1031,212 +1037,228 @@ QA_TEMPLATE = """
             border: none;
         }
         
-        .pdf-header {
-            background: #ffc107;
-            color: #212529;
-            padding: 10px 20px;
-            text-align: center;
-            font-weight: bold;
+        .toggle-pdf-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            z-index: 1000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
         
-        .pdf-content {
-            height: calc(100% - 50px);
+        .toggle-pdf-btn:hover {
+            background: #0056b3;
         }
         
-        .container {
+        .qa-card {
             background: white;
-            padding: 20px;
+            padding: 30px;
             border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             margin-bottom: 20px;
+        }
+        
+        .question-text {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 20px;
+            line-height: 1.6;
+            padding: 15px;
+            background: #f8f9fa;
+            border-left: 4px solid #007bff;
+            border-radius: 0 5px 5px 0;
+        }
+        
+        .answer-text {
+            font-size: 16px;
+            color: #555;
+            line-height: 1.6;
+            padding: 15px;
+            background: #e9f7ef;
+            border-left: 4px solid #28a745;
+            border-radius: 0 5px 5px 0;
+        }
+        
+        .progress-bar {
+            background: #e9ecef;
+            height: 8px;
+            border-radius: 4px;
+            margin-bottom: 30px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            background: linear-gradient(90deg, #007bff, #0056b3);
+            height: 100%;
+            transition: width 0.3s ease;
         }
         
         .qa-header {
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 30px;
         }
         
-        .progress {
-            background: #e9ecef;
-            border-radius: 10px;
-            height: 15px;
-            margin: 15px 0;
+        .qa-header h1 {
+            color: #333;
+            margin-bottom: 10px;
         }
         
-        .progress-bar {
-            background: #ffd700;
-            height: 15px;
-            border-radius: 10px;
-            transition: width 0.3s ease;
-        }
-        
-        .question-container {
-            background: #fff3cd;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 15px 0;
-            border-left: 5px solid #ffc107;
-        }
-        
-        .question-text {
+        .pair-counter {
+            color: #666;
             font-size: 16px;
-            font-weight: bold;
-            margin-bottom: 15px;
-            color: #856404;
-            line-height: 1.4;
-        }
-        
-        .answer-container {
-            background: #d1ecf1;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 15px 0;
-            border-left: 5px solid #17a2b8;
-        }
-        
-        .answer-text {
-            font-size: 14px;
-            line-height: 1.6;
-            color: #0c5460;
         }
         
         .nav-buttons {
+            margin-top: 30px;
             text-align: center;
-            margin-top: 20px;
         }
         
-        button {
-            background: #ffc107;
-            color: #212529;
+        .btn {
+            padding: 12px 24px;
             border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
+            border-radius: 6px;
+            font-size: 16px;
             cursor: pointer;
-            margin: 5px;
-            font-size: 14px;
-            font-weight: bold;
+            margin: 0 10px;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
         }
         
-        button:hover {
-            background: #e0a800;
+        .btn-primary {
+            background: #007bff;
+            color: white;
         }
         
-        button.secondary {
+        .btn-primary:hover {
+            background: #0056b3;
+            transform: translateY(-1px);
+            color: white;
+            text-decoration: none;
+        }
+        
+        .btn-secondary {
             background: #6c757d;
             color: white;
         }
         
-        .qa-counter {
-            text-align: center;
-            font-size: 16px;
-            margin: 15px 0;
-            color: #333;
+        .btn-secondary:hover {
+            background: #545b62;
+            color: white;
+            text-decoration: none;
         }
         
-        .toggle-pdf {
+        .home-link {
             position: fixed;
-            top: 10px;
-            left: 10px;
-            z-index: 1000;
-            background: #ffc107;
-            color: #212529;
-            border: none;
-            padding: 8px 16px;
+            top: 20px;
+            left: 20px;
+            background: #28a745;
+            color: white;
+            padding: 10px 15px;
+            text-decoration: none;
             border-radius: 5px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: bold;
+            font-size: 14px;
+            z-index: 1000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
         
-        @media (max-width: 768px) {
-            .qa-container {
-                flex-direction: column;
-            }
-            .pdf-panel, .qa-panel {
-                width: 100%;
-            }
-            .pdf-panel {
-                height: 40vh;
-            }
-            .qa-panel {
-                height: 60vh;
-            }
+        .home-link:hover {
+            background: #1e7e34;
+            color: white;
+            text-decoration: none;
         }
     </style>
+    <script>
+        function togglePdf() {
+            const pdfPanel = document.querySelector('.pdf-panel');
+            const qaPanel = document.querySelector('.qa-panel');
+            const toggleBtn = document.querySelector('.toggle-pdf-btn');
+            
+            if (pdfPanel.style.display === 'none' || pdfPanel.style.display === '') {
+                // Show PDF
+                pdfPanel.style.display = 'block';
+                qaPanel.classList.add('with-pdf');
+                toggleBtn.textContent = '📖 Hide PDF';
+                // Store state
+                localStorage.setItem('pdfVisible', 'true');
+            } else {
+                // Hide PDF
+                pdfPanel.style.display = 'none';
+                qaPanel.classList.remove('with-pdf');
+                toggleBtn.textContent = '📖 Show PDF';
+                // Store state
+                localStorage.setItem('pdfVisible', 'false');
+            }
+        }
+        
+        // Restore PDF visibility state on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const pdfVisible = localStorage.getItem('pdfVisible');
+            const toggleBtn = document.querySelector('.toggle-pdf-btn');
+            
+            if (pdfVisible === 'true') {
+                togglePdf(); // This will show the PDF
+            } else {
+                // Ensure PDF starts hidden (default state)
+                toggleBtn.textContent = '📖 Show PDF';
+            }
+        });
+    </script>
 </head>
 <body>
-    <button class="toggle-pdf" onclick="togglePdf()">📄 Toggle PDF</button>
+    <a href="/" class="home-link">🏠 Home</a>
+    
+    {% if has_pdf %}
+    <button class="toggle-pdf-btn" onclick="togglePdf()">📖 Show PDF</button>
     
     <div class="qa-container">
-        <div class="pdf-panel" id="pdfPanel">
-            <div class="pdf-header">
-                📄 PDF Document
-                {% if pdf_filename %}
-                - {{ pdf_filename }}
-                {% endif %}
-            </div>
-            <div class="pdf-content">
-                {% if has_pdf %}
-                <iframe class="pdf-viewer" src="/view_pdf" type="application/pdf"></iframe>
-                {% else %}
-                <div style="padding: 20px; text-align: center; color: #666;">
-                    <p>📄 No PDF loaded</p>
-                    <p>Upload a PDF to view it alongside the Q&A</p>
-                </div>
-                {% endif %}
-            </div>
+        <div class="pdf-panel">
+            <iframe class="pdf-viewer" src="/view_pdf" type="application/pdf"></iframe>
         </div>
         
         <div class="qa-panel">
-            <div class="container">
-                <div class="qa-header">
-                    <h2>💬 Q&A Session - Pair {{ current_question + 1 }} of {{ total_questions }}</h2>
-                    <div class="progress">
-                        <div class="progress-bar" style="width: {{ ((current_question + 1) / total_questions * 100)|round }}%"></div>
-                    </div>
-                    <div class="qa-counter">Q&A Pair {{ current_question + 1 }}</div>
+    {% else %}
+    <div class="qa-container">
+        <div class="qa-panel" style="width: 100%;">
+    {% endif %}
+            <div class="qa-header">
+                <h1>💬 Q&A Pairs</h1>
+                <div class="pair-counter">Pair {{ current_question + 1 }} of {{ total_questions }}</div>
+                
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ ((current_question + 1) / total_questions * 100)|round }}%;"></div>
+                </div>
+            </div>
+            
+            <div class="qa-card">
+                <div class="question-text">
+                    <strong>🤔 Question:</strong><br>
+                    {{ question.question }}
                 </div>
                 
-                <div class="question-container">
-                    <div class="question-text">
-                        ❓ <strong>Fråga:</strong><br>
-                        {{ question_data.question }}
-                    </div>
+                <div class="answer-text">
+                    <strong>💡 Answer:</strong><br>
+                    {{ question.answer }}
                 </div>
-                
-                <div class="answer-container">
-                    <div class="answer-text">
-                        🤖 <strong>T5 Model Svar:</strong><br>
-                        {{ question_data.answer }}
-                    </div>
-                </div>
-                
-                <div class="nav-buttons">
-                    {% if current_question + 1 < total_questions %}
-                        <a href="/quiz/next"><button>Nästa Q&A ➡️</button></a>
-                    {% else %}
-                        <a href="/quiz/results"><button>Visa Alla Q&A 📋</button></a>
-                    {% endif %}
-                    <a href="/"><button class="secondary">Hem 🏠</button></a>
-                </div>
+            </div>
+            
+            <div class="nav-buttons">
+                {% if current_question + 1 < total_questions %}
+                    <a href="/qa/next" class="btn btn-primary">Next Q&A Pair →</a>
+                {% else %}
+                    <a href="/" class="btn btn-primary">Back to Home 🏠</a>
+                {% endif %}
+                <a href="/" class="btn btn-secondary">Return Home</a>
             </div>
         </div>
     </div>
-    
-    <script>
-        function togglePdf() {
-            const pdfPanel = document.getElementById('pdfPanel');
-            const qaPanel = document.querySelector('.qa-panel');
-            
-            if (pdfPanel.style.display === 'none') {
-                pdfPanel.style.display = 'block';
-                qaPanel.style.width = '50%';
-            } else {
-                pdfPanel.style.display = 'none';
-                qaPanel.style.width = '100%';
-            }
-        }
-    </script>
 </body>
 </html>
 """
@@ -2029,8 +2051,13 @@ def quiz_answer():
     if question_data.get('type') == 'qa':
         return jsonify({'success': True, 'message': 'Q&A viewed'})
     
-    data = request.get_json()
-    answer = int(data['answer'])
+    # Handle both AJAX and form submissions
+    if request.is_json:
+        data = request.get_json()
+        answer = int(data['answer'])
+    else:
+        # Form submission
+        answer = int(request.form.get('answer', 0))
     
     correct = (answer == question_data['correct_index'])
     
@@ -2052,6 +2079,10 @@ def quiz_answer():
     if 'question_results' not in session:
         session['question_results'] = []
     session['question_results'].append(result)
+    
+    # For form submissions, redirect back to question page to show feedback
+    if not request.is_json:
+        return redirect('/quiz/question')
     
     return jsonify({'success': True})
 
